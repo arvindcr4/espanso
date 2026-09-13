@@ -139,7 +139,7 @@ wxString EscapeHtml(const wxString &str) {
 wxString ResultListBox::OnGetItem(size_t n) const {
     wxString textColor = isDark ? "white" : "";
     wxString shortcut =
-        (n < 8) ? wxString::Format(wxT("Alt+%i"), (int)n + 1) : " ";
+        (n < 9) ? wxString::Format(wxT("Alt+%i"), (int)n + 1) : " ";
 
     // Escape HTML special characters in label and trigger to prevent them
     // from being interpreted as HTML tags (fixes issue #974)

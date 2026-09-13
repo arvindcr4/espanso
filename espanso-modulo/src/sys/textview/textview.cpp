@@ -59,7 +59,11 @@ DerivedTextViewFrame::DerivedTextViewFrame(wxWindow *parent)
 void DerivedTextViewFrame::on_char_event(wxKeyEvent &event) {
     if (event.GetKeyCode() == WXK_ESCAPE) {
         Close(true);
+        return;
     }
+
+    // Let the text control handle normal navigation and copy shortcuts.
+    event.Skip();
 }
 
 void DerivedTextViewFrame::on_copy_to_clipboard(wxCommandEvent &event) {
