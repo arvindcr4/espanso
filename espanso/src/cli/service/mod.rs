@@ -30,6 +30,7 @@ use crate::{
     lock::acquire_worker_lock,
 };
 
+#[cfg(any(target_os = "macos", test))]
 mod macos;
 use crate::path::Paths;
 use clap::ArgMatches;

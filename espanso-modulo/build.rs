@@ -131,6 +131,7 @@ fn build_native() {
     cc::Build::new()
         .cpp(true)
         .file("src/sys/form/form.cpp")
+        .file("src/sys/library/library.cpp")
         .file("src/sys/search/search.cpp")
         .file("src/sys/common/common.cpp")
         .file("src/sys/wizard/wizard.cpp")
@@ -282,6 +283,7 @@ fn build_native() {
     build
         .cpp(true)
         .file("src/sys/form/form.cpp")
+        .file("src/sys/library/library.cpp")
         .file("src/sys/common/common.cpp")
         .file("src/sys/search/search.cpp")
         .file("src/sys/wizard/wizard.cpp")
@@ -478,6 +480,7 @@ fn build_native() {
     build
         .cpp(true)
         .file("src/sys/form/form.cpp")
+        .file("src/sys/library/library.cpp")
         .file("src/sys/search/search.cpp")
         .file("src/sys/common/common.cpp")
         .file("src/sys/wizard/wizard.cpp")

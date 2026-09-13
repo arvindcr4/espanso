@@ -34,6 +34,11 @@ mod daemon;
 mod edition_check;
 mod util;
 
+#[cfg(any(target_os = "macos", test))]
+pub fn is_login_launch(args: Option<&clap::ArgMatches>) -> bool {
+    args.is_some_and(|args| args.is_present("launch-at-login"))
+}
+
 pub fn new() -> CliModule {
     #[allow(clippy::needless_update)]
     CliModule {
@@ -50,11 +55,7 @@ pub fn new() -> CliModule {
 fn launcher_main(args: CliModuleArgs) -> i32 {
     use espanso_modulo::wizard::{MigrationResult, WizardHandlers, WizardOptions};
     #[cfg(target_os = "macos")]
-    let is_login_launch = args
-        .cli_args
-        .as_ref()
-        .and_then(|args| args.subcommand_matches("launcher"))
-        .map_or(false, |args| args.is_present("launch-at-login"));
+    let is_login_launch = is_login_launch(args.cli_args.as_ref());
     let paths = args.paths.expect("missing paths in launcher main");
 
     let lock_file = acquire_daemon_lock(&paths.runtime);
@@ -98,17 +99,19 @@ fn launcher_main(args: CliModuleArgs) -> i32 {
         !preferences.has_selected_auto_start_option() && !cfg!(target_os = "linux");
     let preferences_clone = preferences.clone();
     let auto_start_handler = Box::new(move |auto_start| {
-        preferences_clone.set_has_selected_auto_start_option(true);
-
         if auto_start {
             match util::configure_auto_start(true) {
-                Ok(()) => true,
+                Ok(()) => {
+                    preferences_clone.set_has_selected_auto_start_option(true);
+                    true
+                }
                 Err(error) => {
                     eprintln!("Service register returned error: {error}");
                     false
                 }
             }
         } else {
+            preferences_clone.set_has_selected_auto_start_option(true);
             true
         }
     });
@@ -223,4 +226,20 @@ fn launcher_main(args: CliModuleArgs) -> i32 {
 fn launcher_main(_: CliModuleArgs) -> i32 {
     // TODO: handle what happens here
     unimplemented!();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_login_launch;
+    use clap::{App, Arg};
+
+    #[test]
+    fn detects_login_flag_on_the_module_arguments() {
+        let command = || App::new("launcher").arg(Arg::new("launch-at-login").long("launch-at-login"));
+        let login = command().get_matches_from(["launcher", "--launch-at-login"]);
+        let manual = command().get_matches_from(["launcher"]);
+        assert!(is_login_launch(Some(&login)));
+        assert!(!is_login_launch(Some(&manual)));
+        assert!(!is_login_launch(None));
+    }
 }

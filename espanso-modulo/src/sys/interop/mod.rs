@@ -195,6 +195,27 @@ pub struct TextViewMetadata {
     pub content: *const c_char,
 }
 
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct LibraryEntryMetadata {
+    pub id: *const c_char,
+    pub collection: *const c_char,
+    pub trigger: *const c_char,
+    pub replacement: *const c_char,
+    pub label: *const c_char,
+    pub editable: c_int,
+}
+
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct LibraryMetadata {
+    pub entries: *const LibraryEntryMetadata,
+    pub entries_count: c_int,
+    pub config_dir: *const c_char,
+    pub startup_enabled: c_int,
+    pub startup_supported: c_int,
+}
+
 // Native bindings
 
 #[allow(improper_ctypes)]
@@ -233,4 +254,21 @@ extern "C" {
 
     // TEXTVIEW
     pub(crate) fn interop_show_text_view(metadata: *const TextViewMetadata);
+
+    // LIBRARY
+    pub(crate) fn interop_show_library(
+        metadata: *const LibraryMetadata,
+        callback: extern "C" fn(
+            action: c_int,
+            id: *const c_char,
+            trigger: *const c_char,
+            replacement: *const c_char,
+            label: *const c_char,
+            startup_enabled: c_int,
+            data: *mut c_void,
+            result: *mut c_char,
+            result_size: c_int,
+        ) -> c_int,
+        data: *mut c_void,
+    );
 }

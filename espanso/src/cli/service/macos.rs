@@ -58,6 +58,7 @@ pub fn register() -> Result<()> {
 
     let output = Command::new("launchctl")
         .arg("load")
+        .arg("-w")
         .arg(&plist_file)
         .output()
         .context("unable to execute launchctl load")?;
@@ -134,6 +135,7 @@ pub fn set_library_startup(enabled: bool) -> Result<()> {
 
     if enabled {
         ensure_registration_supported()?;
+        enable_login_service()?;
         write_service_plist()?;
     } else {
         let plist_file = get_service_file_path()?;
@@ -144,6 +146,19 @@ pub fn set_library_startup(enabled: bool) -> Result<()> {
         }
     }
 
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn enable_login_service() -> Result<()> {
+    let target = format!("gui/{}/com.federicoterzi.espanso", unsafe { libc::geteuid() });
+    let output = Command::new("launchctl")
+        .args(["enable", &target])
+        .output()
+        .context("unable to enable the Espanso login service")?;
+    if !output.status.success() {
+        bail!("launchctl enable failed: {}", launchctl_error(&output));
+    }
     Ok(())
 }
 
@@ -230,8 +245,16 @@ fn write_service_plist() -> Result<PathBuf> {
 
     info!("updating LaunchAgents entry: {}", plist_file.display());
     info!("entry will point to: {espanso_path}");
-    std::fs::write(&plist_file, plist_content)
-        .with_context(|| format!("unable to write LaunchAgents entry {}", plist_file.display()))?;
+    let pending_dir = tempdir::TempDir::new_in(agents_dir, ".espanso-launch-agent")?;
+    let pending_file = pending_dir.path().join("agent.plist");
+    {
+        use std::io::Write;
+        let mut file = std::fs::File::create(&pending_file)?;
+        file.write_all(plist_content.as_bytes())?;
+        file.sync_all()?;
+    }
+    std::fs::rename(&pending_file, &plist_file)
+        .with_context(|| format!("unable to replace LaunchAgents entry {}", plist_file.display()))?;
 
     Ok(plist_file)
 }
@@ -240,9 +263,11 @@ fn render_service_plist(espanso_path: &str, user_path: &str) -> Result<String, R
     let espanso_path = escape_plist_value("the Espanso executable path", espanso_path)?;
     let user_path = escape_plist_value("PATH", user_path)?;
 
-    Ok(SERVICE_PLIST_CONTENT
-        .replace("{{{espanso_path}}}", &espanso_path)
-        .replace("{{{PATH}}}", &user_path))
+    let (before, after) = SERVICE_PLIST_CONTENT
+        .split_once("{{{espanso_path}}}")
+        .expect("LaunchAgent template must contain an executable placeholder");
+    Ok(format!("{}{}{}", before.replace("{{{PATH}}}", &user_path), espanso_path,
+        after.replace("{{{PATH}}}", &user_path)))
 }
 
 fn escape_plist_value(field: &'static str, value: &str) -> Result<String, RegisterError> {
@@ -260,6 +285,7 @@ fn escape_plist_value(field: &'static str, value: &str) -> Result<String, Regist
             '>' => escaped.push_str("&gt;"),
             '\'' => escaped.push_str("&apos;"),
             '"' => escaped.push_str("&quot;"),
+            '\r' => escaped.push_str("&#13;"),
             _ => escaped.push(character),
         }
     }
@@ -297,5 +323,12 @@ mod tests {
     #[test]
     fn service_plist_rejects_xml_invalid_values() {
         assert!(render_service_plist("/Applications/Espanso", "/usr/bin:\u{1}").is_err());
+    }
+
+    #[test]
+    fn service_plist_does_not_expand_placeholders_in_user_values() {
+        let plist = render_service_plist("/Applications/{{{PATH}}}/Espanso", "/{{{espanso_path}}}").unwrap();
+        assert!(plist.contains("<string>/Applications/{{{PATH}}}/Espanso</string>"));
+        assert!(plist.contains("<string>/{{{espanso_path}}}</string>"));
     }
 }

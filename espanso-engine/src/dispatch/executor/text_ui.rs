@@ -25,6 +25,7 @@ use log::error;
 pub trait TextUIHandler {
     fn show_text(&self, title: &str, text: &str) -> Result<()>;
     fn show_logs(&self) -> Result<()>;
+    fn show_library(&self) -> Result<()>;
 }
 
 pub struct TextUIExecutor<'a> {
@@ -53,6 +54,13 @@ impl Executor for TextUIExecutor<'_> {
                 error!("text UI handler reported an error: {error:?}");
             }
 
+            return true;
+        }
+
+        if matches!(&event.etype, EventType::ShowLibrary) {
+            if let Err(error) = self.handler.show_library() {
+                error!("library UI handler reported an error: {error:?}");
+            }
             return true;
         }
 
