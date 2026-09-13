@@ -156,7 +156,16 @@ For example, specifying 'email' is equivalent to 'match/email.yml'."#))
         .setting(AppSettings::Hidden)
         .about("Start the daemon without spawning a new process."),
     )
-    .subcommand(SubCommand::with_name("launcher").setting(AppSettings::Hidden))
+    .subcommand(
+      SubCommand::with_name("launcher")
+        .setting(AppSettings::Hidden)
+        .arg(
+          Arg::with_name("launch-at-login")
+            .long("launch-at-login")
+            .takes_value(false)
+            .hidden(true),
+        ),
+    )
     .subcommand(SubCommand::with_name("log").about("Print the daemon logs."))
     .subcommand(
       SubCommand::with_name("stats")

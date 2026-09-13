@@ -49,11 +49,24 @@ pub fn new() -> CliModule {
 #[cfg(feature = "modulo")]
 fn launcher_main(args: CliModuleArgs) -> i32 {
     use espanso_modulo::wizard::{MigrationResult, WizardHandlers, WizardOptions};
+    #[cfg(target_os = "macos")]
+    let is_login_launch = args
+        .cli_args
+        .as_ref()
+        .and_then(|args| args.subcommand_matches("launcher"))
+        .map_or(false, |args| args.is_present("launch-at-login"));
     let paths = args.paths.expect("missing paths in launcher main");
 
-    // If espanso is already running, show a warning
     let lock_file = acquire_daemon_lock(&paths.runtime);
     if lock_file.is_none() {
+        #[cfg(target_os = "macos")]
+        if !is_login_launch {
+            if let Err(error) = crate::cli::library::open_library(&paths) {
+                error!("unable to open the Espanso library: {error}");
+            }
+        }
+
+        #[cfg(not(target_os = "macos"))]
         util::show_already_running_warning().expect("unable to show already running warning");
         return LAUNCHER_ALREADY_RUNNING;
     }
@@ -187,6 +200,13 @@ fn launcher_main(args: CliModuleArgs) -> i32 {
     }
 
     if should_launch_daemon {
+        #[cfg(target_os = "macos")]
+        if !is_login_launch {
+            if let Err(error) = crate::cli::library::open_library(&paths) {
+                error!("unable to open the Espanso library: {error}");
+            }
+        }
+
         // We hide the dock icon on macOS to avoid having it around when the daemon is running
         #[cfg(target_os = "macos")]
         {
