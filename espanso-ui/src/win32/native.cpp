@@ -118,6 +118,7 @@ LRESULT CALLBACK ui_window_procedure(HWND window, unsigned int msg, WPARAM wp,
         SetForegroundWindow(window);
         TrackPopupMenu(menu, TPM_BOTTOMALIGN | TPM_LEFTALIGN, pt.x, pt.y, 0,
                        window, NULL);
+        DestroyMenu(menu);
 
         break;
     }
@@ -309,6 +310,27 @@ void ui_update_tray_icon(void *window, int32_t index) {
 
 // Menu related methods
 
+bool utf8_to_wide(const std::string &value, std::wstring *result) {
+    if (value.empty()) {
+        result->clear();
+        return true;
+    }
+
+    int length = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS,
+                                     value.data(), (int)value.size(), NULL, 0);
+    if (length == 0) {
+        return false;
+    }
+
+    result->assign(length, L'\0');
+    if (MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, value.data(),
+                            (int)value.size(), &(*result)[0], length) == 0) {
+        return false;
+    }
+
+    return true;
+}
+
 void _insert_separator_menu(HMENU parent) {
     InsertMenu(parent, -1, MF_BYPOSITION | MF_SEPARATOR, 0, NULL);
 }
@@ -319,10 +341,10 @@ void _insert_single_menu(HMENU parent, json item) {
     }
     std::string label = item["label"];
     uint32_t raw_id = item["id"];
-
-    // Convert to wide chars
-    std::wstring wide_label(label.length(), L'#');
-    mbstowcs(&wide_label[0], label.c_str(), label.length());
+    std::wstring wide_label;
+    if (!utf8_to_wide(label, &wide_label)) {
+        return;
+    }
 
     InsertMenu(parent, -1, MF_BYPOSITION | MF_STRING, raw_id,
                wide_label.c_str());
@@ -337,10 +359,11 @@ void _insert_sub_menu(HMENU parent, json items) {
         } else if (item["type"] == "sub") {
             HMENU subMenu = CreatePopupMenu();
             std::string label = item["label"];
-
-            // Convert to wide chars
-            std::wstring wide_label(label.length(), L'#');
-            mbstowcs(&wide_label[0], label.c_str(), label.length());
+            std::wstring wide_label;
+            if (!utf8_to_wide(label, &wide_label)) {
+                DestroyMenu(subMenu);
+                continue;
+            }
 
             InsertMenu(parent, -1, MF_BYPOSITION | MF_POPUP, (UINT_PTR)subMenu,
                        wide_label.c_str());
@@ -356,9 +379,12 @@ int32_t ui_show_context_menu(void *window, char *payload) {
         HMENU parentMenu = CreatePopupMenu();
         _insert_sub_menu(parentMenu, j_menu);
 
-        PostMessage((HWND)window, APPWM_SHOW_CONTEXT_MENU, 0,
-                    (LPARAM)parentMenu);
-        return 0;
+        if (PostMessage((HWND)window, APPWM_SHOW_CONTEXT_MENU, 0,
+                        (LPARAM)parentMenu)) {
+            return 0;
+        }
+
+        DestroyMenu(parentMenu);
     }
     return -1;
 }
