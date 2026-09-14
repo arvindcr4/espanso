@@ -158,6 +158,13 @@ fn launcher_main(args: CliModuleArgs) -> i32 {
         || is_accessibility_page_enabled
         || is_wrong_edition_page_enabled
     {
+        // Login launches stay in the background, but the wizard needs a visible,
+        // focusable window (for example to request Accessibility permissions).
+        #[cfg(target_os = "macos")]
+        if is_login_launch {
+            espanso_mac_utils::convert_to_foreground_app();
+        }
+
         espanso_modulo::wizard::show(WizardOptions {
             version: crate::VERSION.to_string(),
             is_welcome_page_enabled,
