@@ -192,9 +192,11 @@ typedef struct LibraryEntryMetadata {
 } LibraryEntryMetadata;
 
 typedef struct LibraryMetadata {
+    const char *window_icon_path;
     const LibraryEntryMetadata *entries;
     const int entries_count;
     const char *config_dir;
+    const char *new_entry_collection;
     const int startup_enabled;
     const int startup_supported;
 } LibraryMetadata;

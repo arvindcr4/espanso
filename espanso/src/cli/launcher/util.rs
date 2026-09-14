@@ -49,6 +49,7 @@ pub enum AddToPathError {
     NonZeroExitCode,
 }
 
+#[cfg(not(target_os = "macos"))]
 pub fn show_already_running_warning() -> Result<()> {
     let espanso_exe_path = std::env::current_exe()?;
     let mut command = Command::new(espanso_exe_path.to_string_lossy().to_string());

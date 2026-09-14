@@ -235,7 +235,8 @@ mod tests {
 
     #[test]
     fn detects_login_flag_on_the_module_arguments() {
-        let command = || App::new("launcher").arg(Arg::new("launch-at-login").long("launch-at-login"));
+        let command =
+            || App::new("launcher").arg(Arg::new("launch-at-login").long("launch-at-login"));
         let login = command().get_matches_from(["launcher", "--launch-at-login"]);
         let manual = command().get_matches_from(["launcher"]);
         assert!(is_login_launch(Some(&login)));

@@ -209,9 +209,11 @@ pub struct LibraryEntryMetadata {
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct LibraryMetadata {
+    pub window_icon_path: *const c_char,
     pub entries: *const LibraryEntryMetadata,
     pub entries_count: c_int,
     pub config_dir: *const c_char,
+    pub new_entry_collection: *const c_char,
     pub startup_enabled: c_int,
     pub startup_supported: c_int,
 }

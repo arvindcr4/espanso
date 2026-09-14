@@ -64,6 +64,7 @@ static CLI_HANDLERS: LazyLock<Vec<CliModule>> = LazyLock::new(|| {
         cli::path::new(),
         cli::edit::new(),
         cli::launcher::new(),
+        cli::library::new(),
         cli::log::new(),
         cli::stats::new(),
         cli::worker::new(),
