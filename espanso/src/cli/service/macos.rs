@@ -17,109 +17,97 @@
  * along with espanso.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-use anyhow::{bail, Result};
+#[cfg(target_os = "macos")]
+use anyhow::bail;
+#[cfg(target_os = "macos")]
+use anyhow::Context;
+use anyhow::Result;
+#[cfg(target_os = "macos")]
 use log::{info, warn};
-use std::process::Command;
-use std::{fs::create_dir_all, process::ExitStatus};
+#[cfg(target_os = "macos")]
+use std::{
+    fs::create_dir_all,
+    path::PathBuf,
+    process::{Command, ExitStatus, Output},
+};
 use thiserror::Error;
 
-use crate::cli::util::prevent_running_as_root_on_macos;
-use crate::error_eprintln;
-
 #[cfg(target_os = "macos")]
+use crate::{cli::util::prevent_running_as_root_on_macos, error_eprintln};
+
 const SERVICE_PLIST_CONTENT: &str = include_str!("../../res/macos/com.federicoterzi.espanso.plist");
 #[cfg(target_os = "macos")]
 const SERVICE_PLIST_FILE_NAME: &str = "com.federicoterzi.espanso.plist";
 
+#[cfg(target_os = "macos")]
 pub fn register() -> Result<()> {
     prevent_running_as_root_on_macos();
 
-    if crate::cli::util::is_subject_to_app_translocation_on_macos() {
-        error_eprintln!("Unable to register Espanso as service, please move the Espanso.app bundle inside the /Applications directory to proceed.");
-        error_eprintln!(
-            "For more information, please see: https://github.com/espanso/espanso/issues/844"
-        );
-        bail!("macOS activated app-translocation on Espanso");
-    }
-
-    let home_dir = dirs::home_dir().expect("could not get user home directory");
-    let library_dir = home_dir.join("Library");
-    let agents_dir = library_dir.join("LaunchAgents");
-
-    // Make sure agents directory exists
-    if !agents_dir.exists() {
-        create_dir_all(agents_dir.clone())?;
-    }
-
-    let plist_file = agents_dir.join(SERVICE_PLIST_FILE_NAME);
-    if !plist_file.exists() {
-        info!(
-            "creating LaunchAgents entry: {}",
-            plist_file.to_str().unwrap_or_default()
-        );
-
-        let espanso_path = std::env::current_exe()?;
-        info!(
-            "entry will point to: {}",
-            espanso_path.to_str().unwrap_or_default()
-        );
-
-        let plist_content = String::from(SERVICE_PLIST_CONTENT).replace(
-            "{{{espanso_path}}}",
-            espanso_path.to_str().unwrap_or_default(),
-        );
-
-        // Copy the user PATH variable and inject it in the Plist file so that
-        // it gets loaded by Launchd.
-        // To see why this is necessary: https://github.com/espanso/espanso/issues/233
-        let user_path = std::env::var("PATH").unwrap_or_else(|_| String::new());
-        let plist_content = plist_content.replace("{{{PATH}}}", &user_path);
-
-        std::fs::write(plist_file.clone(), plist_content).expect("Unable to write plist file");
-    }
+    ensure_registration_supported()?;
+    let plist_file = write_service_plist()?;
 
     info!("reloading espanso launchctl entry");
 
-    if let Err(err) = Command::new("launchctl")
-        .args(["unload", "-w", plist_file.to_str().unwrap_or_default()])
-        .output()
-    {
-        warn!("unload command failed: {err}");
-    }
-
-    let res = Command::new("launchctl")
-        .args(["load", "-w", plist_file.to_str().unwrap_or_default()])
-        .status();
-
-    if let Ok(status) = res {
-        if status.success() {
-            return Ok(());
+    match Command::new("launchctl").arg("unload").arg(&plist_file).output() {
+        Ok(output) if !output.status.success() => {
+            warn!("launchctl unload failed: {}", launchctl_error(&output));
         }
+        Ok(_) => {}
+        Err(err) => warn!("launchctl unload command failed: {err}"),
     }
 
-    Err(RegisterError::LaunchCtlLoadFailed.into())
+    let output = Command::new("launchctl")
+        .arg("load")
+        .arg("-w")
+        .arg(&plist_file)
+        .output()
+        .context("unable to execute launchctl load")?;
+
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(RegisterError::LaunchCtlLoadFailed {
+            status: output.status,
+            details: launchctl_error(&output),
+        }
+        .into())
+    }
 }
 
 #[derive(Error, Debug)]
 pub enum RegisterError {
-    #[error("launchctl load failed")]
-    LaunchCtlLoadFailed,
+    #[cfg(target_os = "macos")]
+    #[error("the Espanso executable path is not valid UTF-8")]
+    ExecutablePathNotUtf8,
+
+    #[cfg(target_os = "macos")]
+    #[error("the PATH environment variable is not valid UTF-8")]
+    PathNotUtf8,
+
+    #[error("{field} contains a character that cannot be stored in an XML plist")]
+    InvalidXmlCharacter { field: &'static str },
+
+    #[cfg(target_os = "macos")]
+    #[error("launchctl load failed with status {status}: {details}")]
+    LaunchCtlLoadFailed { status: ExitStatus, details: String },
 }
 
+#[cfg(target_os = "macos")]
 pub fn unregister() -> Result<()> {
     prevent_running_as_root_on_macos();
 
-    let home_dir = dirs::home_dir().expect("could not get user home directory");
-    let library_dir = home_dir.join("Library");
-    let agents_dir = library_dir.join("LaunchAgents");
-
-    let plist_file = agents_dir.join(SERVICE_PLIST_FILE_NAME);
+    let plist_file = get_service_file_path()?;
     if plist_file.exists() {
-        let _res = Command::new("launchctl")
-            .args(["unload", "-w", plist_file.to_str().unwrap_or_default()])
-            .output();
+        match Command::new("launchctl").arg("unload").arg(&plist_file).output() {
+            Ok(output) if !output.status.success() => {
+                warn!("launchctl unload failed: {}", launchctl_error(&output));
+            }
+            Ok(_) => {}
+            Err(err) => warn!("launchctl unload command failed: {err}"),
+        }
 
-        std::fs::remove_file(&plist_file)?;
+        std::fs::remove_file(&plist_file)
+            .with_context(|| format!("unable to remove LaunchAgents entry {}", plist_file.display()))?;
 
         Ok(())
     } else {
@@ -127,20 +115,54 @@ pub fn unregister() -> Result<()> {
     }
 }
 
+#[cfg(target_os = "macos")]
 #[derive(Error, Debug)]
 pub enum UnregisterError {
     #[error("plist entry not found")]
     PlistNotFound,
 }
 
+#[cfg(target_os = "macos")]
 pub fn is_registered() -> bool {
-    let home_dir = dirs::home_dir().expect("could not get user home directory");
-    let library_dir = home_dir.join("Library");
-    let agents_dir = library_dir.join("LaunchAgents");
-    let plist_file = agents_dir.join(SERVICE_PLIST_FILE_NAME);
-    plist_file.is_file()
+    get_service_file_path().map_or(false, |path| path.is_file())
 }
 
+// The library changes the next-login setting only; it must not interrupt the
+// currently loaded LaunchAgent or the daemon it owns.
+#[cfg(target_os = "macos")]
+pub fn set_library_startup(enabled: bool) -> Result<()> {
+    prevent_running_as_root_on_macos();
+
+    if enabled {
+        ensure_registration_supported()?;
+        enable_login_service()?;
+        write_service_plist()?;
+    } else {
+        let plist_file = get_service_file_path()?;
+        if plist_file.exists() {
+            std::fs::remove_file(&plist_file).with_context(|| {
+                format!("unable to remove LaunchAgents entry {}", plist_file.display())
+            })?;
+        }
+    }
+
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn enable_login_service() -> Result<()> {
+    let target = format!("gui/{}/com.federicoterzi.espanso", unsafe { libc::geteuid() });
+    let output = Command::new("launchctl")
+        .args(["enable", &target])
+        .output()
+        .context("unable to enable the Espanso login service")?;
+    if !output.status.success() {
+        bail!("launchctl enable failed: {}", launchctl_error(&output));
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
 pub fn start_service() -> Result<()> {
     if !is_registered() {
         eprintln!("Unable to start espanso as a service as it's not been registered.");
@@ -168,6 +190,7 @@ pub fn start_service() -> Result<()> {
     }
 }
 
+#[cfg(target_os = "macos")]
 #[derive(Error, Debug)]
 pub enum StartError {
     #[error("not registered as a service")]
@@ -178,4 +201,134 @@ pub enum StartError {
 
     #[error("launchctl exited with non-zero code `{0}`")]
     LaunchCtlNonZeroExit(ExitStatus),
+}
+
+#[cfg(target_os = "macos")]
+fn get_service_file_path() -> Result<PathBuf> {
+    let home_dir = dirs::home_dir().context("could not get the user home directory")?;
+    Ok(home_dir
+        .join("Library")
+        .join("LaunchAgents")
+        .join(SERVICE_PLIST_FILE_NAME))
+}
+
+#[cfg(target_os = "macos")]
+fn ensure_registration_supported() -> Result<()> {
+    if crate::cli::util::is_subject_to_app_translocation_on_macos() {
+        error_eprintln!("Unable to register Espanso as service, please move the Espanso.app bundle inside the /Applications directory to proceed.");
+        error_eprintln!(
+            "For more information, please see: https://github.com/espanso/espanso/issues/844"
+        );
+        bail!("macOS activated app-translocation on Espanso");
+    }
+
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn write_service_plist() -> Result<PathBuf> {
+    let plist_file = get_service_file_path()?;
+    let agents_dir = plist_file
+        .parent()
+        .expect("LaunchAgent plist path must have a parent directory");
+    create_dir_all(agents_dir)
+        .with_context(|| format!("unable to create LaunchAgents directory {}", agents_dir.display()))?;
+
+    let espanso_path = std::env::current_exe()
+        .context("unable to determine the Espanso executable path for launchd")?;
+    let espanso_path = espanso_path
+        .to_str()
+        .ok_or(RegisterError::ExecutablePathNotUtf8)?;
+    let user_path = std::env::var_os("PATH").unwrap_or_default();
+    let user_path = user_path.to_str().ok_or(RegisterError::PathNotUtf8)?;
+    let plist_content = render_service_plist(espanso_path, user_path)?;
+
+    info!("updating LaunchAgents entry: {}", plist_file.display());
+    info!("entry will point to: {espanso_path}");
+    let pending_dir = tempdir::TempDir::new_in(agents_dir, ".espanso-launch-agent")?;
+    let pending_file = pending_dir.path().join("agent.plist");
+    {
+        use std::io::Write;
+        let mut file = std::fs::File::create(&pending_file)?;
+        file.write_all(plist_content.as_bytes())?;
+        file.sync_all()?;
+    }
+    std::fs::rename(&pending_file, &plist_file)
+        .with_context(|| format!("unable to replace LaunchAgents entry {}", plist_file.display()))?;
+
+    Ok(plist_file)
+}
+
+fn render_service_plist(espanso_path: &str, user_path: &str) -> Result<String, RegisterError> {
+    let espanso_path = escape_plist_value("the Espanso executable path", espanso_path)?;
+    let user_path = escape_plist_value("PATH", user_path)?;
+
+    let (before, after) = SERVICE_PLIST_CONTENT
+        .split_once("{{{espanso_path}}}")
+        .expect("LaunchAgent template must contain an executable placeholder");
+    Ok(format!("{}{}{}", before.replace("{{{PATH}}}", &user_path), espanso_path,
+        after.replace("{{{PATH}}}", &user_path)))
+}
+
+fn escape_plist_value(field: &'static str, value: &str) -> Result<String, RegisterError> {
+    let mut escaped = String::with_capacity(value.len());
+    for character in value.chars() {
+        if (character < ' ' && !matches!(character, '\t' | '\n' | '\r'))
+            || matches!(character, '\u{FFFE}' | '\u{FFFF}')
+        {
+            return Err(RegisterError::InvalidXmlCharacter { field });
+        }
+
+        match character {
+            '&' => escaped.push_str("&amp;"),
+            '<' => escaped.push_str("&lt;"),
+            '>' => escaped.push_str("&gt;"),
+            '\'' => escaped.push_str("&apos;"),
+            '"' => escaped.push_str("&quot;"),
+            '\r' => escaped.push_str("&#13;"),
+            _ => escaped.push(character),
+        }
+    }
+    Ok(escaped)
+}
+
+#[cfg(target_os = "macos")]
+fn launchctl_error(output: &Output) -> String {
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_owned();
+    if stderr.is_empty() {
+        String::from_utf8_lossy(&output.stdout).trim().to_owned()
+    } else {
+        stderr
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::render_service_plist;
+
+    #[test]
+    fn service_plist_escapes_launchd_values_and_marks_login_launches() {
+        let plist = render_service_plist(
+            "/Applications/Espanso & Friends/<espanso>",
+            "/usr/local/bin:/tmp/a&b<'\"",
+        )
+        .unwrap();
+
+        assert!(plist.contains("/Applications/Espanso &amp; Friends/&lt;espanso&gt;"));
+        assert!(plist.contains("/tmp/a&amp;b&lt;&apos;&quot;"));
+        assert!(plist.contains("<string>--launch-at-login</string>"));
+        assert!(!plist.contains("<key>KeepAlive</key>"));
+    }
+
+    #[test]
+    fn service_plist_rejects_xml_invalid_values() {
+        assert!(render_service_plist("/Applications/Espanso", "/usr/bin:\u{1}").is_err());
+    }
+
+    #[test]
+    fn service_plist_does_not_expand_placeholders_in_user_values() {
+        let plist = render_service_plist("/Applications/{{{PATH}}}/Espanso", "/{{{espanso_path}}}").unwrap();
+        assert!(plist.contains("<string>/Applications/{{{PATH}}}/Espanso</string>"));
+        assert!(plist.contains("<string>/{{{espanso_path}}}</string>"));
+    }
 }

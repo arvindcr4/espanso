@@ -18,6 +18,7 @@
  */
 
 pub mod form;
+pub mod library;
 pub mod search;
 mod sys;
 pub mod textview;

@@ -44,4 +44,8 @@ impl TextUIHandler for TextUIHandlerAdapter<'_> {
             .show_file("Espanso Logs", &self.paths.runtime.join("espanso.log"))?;
         Ok(())
     }
+
+    fn show_library(&self) -> anyhow::Result<()> {
+        crate::cli::library::open_library(self.paths)
+    }
 }

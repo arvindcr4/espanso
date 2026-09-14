@@ -13,6 +13,7 @@
     <array>
         <string>{{{espanso_path}}}</string>
         <string>launcher</string>
+        <string>--launch-at-login</string>
     </array>
     <key>RunAtLoad</key>
     <true/>

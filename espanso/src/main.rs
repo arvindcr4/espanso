@@ -156,7 +156,17 @@ For example, specifying 'email' is equivalent to 'match/email.yml'."#))
         .setting(AppSettings::Hidden)
         .about("Start the daemon without spawning a new process."),
     )
-    .subcommand(SubCommand::with_name("launcher").setting(AppSettings::Hidden))
+    .subcommand(
+      SubCommand::with_name("launcher")
+        .setting(AppSettings::Hidden)
+        .arg(
+          Arg::with_name("launch-at-login")
+            .long("launch-at-login")
+            .takes_value(false)
+            .hidden(true),
+        ),
+    )
+    .subcommand(SubCommand::with_name("library").about("Browse and manage your snippets"))
     .subcommand(SubCommand::with_name("log").about("Print the daemon logs."))
     .subcommand(
       SubCommand::with_name("stats")
@@ -577,7 +587,10 @@ SubCommand::with_name("install")
         // We need to enable this selectively, otherwise we would end up with multiple
         // dock icons due to the multi-process nature of espanso.
         #[cfg(target_os = "macos")]
-        if handler.show_in_dock {
+        if handler.show_in_dock
+            && !(handler.subcommand == "launcher"
+                && cli::launcher::is_login_launch(matches.subcommand_matches("launcher")))
+        {
             espanso_mac_utils::convert_to_foreground_app();
         }
 

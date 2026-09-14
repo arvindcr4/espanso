@@ -102,6 +102,7 @@ pub enum EventType {
     DisplaySecureInputTroubleshoot,
     ShowConfigFolder,
     ShowSearchBar,
+    ShowLibrary,
     ShowText(ui::ShowTextEvent),
     ShowLogs,
 

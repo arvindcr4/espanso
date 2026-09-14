@@ -179,3 +179,35 @@ typedef struct TextViewMetadata {
     const char *title;
     const char *content;
 } TextViewMetadata;
+
+// SNIPPET LIBRARY
+
+typedef struct LibraryEntryMetadata {
+    const char *id;
+    const char *collection;
+    const char *trigger;
+    const char *replacement;
+    const char *label;
+    const int editable;
+} LibraryEntryMetadata;
+
+typedef struct LibraryMetadata {
+    const LibraryEntryMetadata *entries;
+    const int entries_count;
+    const char *config_dir;
+    const int startup_enabled;
+    const int startup_supported;
+} LibraryMetadata;
+
+const int LIBRARY_ACTION_SAVE = 1;
+const int LIBRARY_ACTION_DELETE = 2;
+const int LIBRARY_ACTION_SET_STARTUP = 3;
+
+// `result` is copied by the native window before this function returns. It
+// contains either a saved id or an error message, according to the return code.
+typedef int (*LibraryActionCallback)(int action, const char *id,
+                                     const char *trigger,
+                                     const char *replacement,
+                                     const char *label, int startup_enabled,
+                                     void *data, char *result,
+                                     const int result_size);

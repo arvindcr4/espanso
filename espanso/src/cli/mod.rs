@@ -28,6 +28,7 @@ pub mod daemon;
 pub mod edit;
 pub mod env_path;
 pub mod launcher;
+pub mod library;
 pub mod log;
 pub mod match_cli;
 pub mod modulo;

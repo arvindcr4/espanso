@@ -30,12 +30,14 @@ use crate::{
     lock::acquire_worker_lock,
 };
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", test))]
 mod macos;
 use crate::path::Paths;
 use clap::ArgMatches;
 #[cfg(target_os = "macos")]
-use macos::*;
+pub(crate) use macos::{is_registered, register, set_library_startup, unregister};
+#[cfg(target_os = "macos")]
+use macos::start_service;
 
 #[cfg(not(target_os = "windows"))]
 mod unix;
